@@ -1,8 +1,6 @@
 # UI-Vision: Automated Design-to-Code Visual Match and Mismatch Classifier
 
-**Course:** COMP 491 — Artificial Intelligence & Machine Learning (Computer Vision Project)  
-**Student:** Mohammed Alkubati  
-**Instructor:** Dr. Mohammed AlGabri  
+**By:** Mohammed Alkubati  
 **Date:** November 2026  
 
 ---
