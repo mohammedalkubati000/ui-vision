@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --pad: 24px;
+    --bg: #2563eb;
+    --text: #ffffff;
+    --weight: 600;
+    --radius: 12px;
+    --font-size: 16px;
+  }
+  body { margin: 0; padding: 40px; background: #f3f4f6; font-family: Arial, sans-serif; }
+  .card { width: 320px; padding: var(--pad); background: var(--bg); color: var(--text); border-radius: var(--radius); }
+  .card h2 { margin: 0 0 8px; font-size: 20px; font-weight: var(--weight); }
+  .card p { margin: 0 0 16px; font-size: var(--font-size); }
+  .card button { padding: 10px 20px; border: none; border-radius: 8px; background: #fff; color: #111; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="card" id="target">
+    <h2>Welcome</h2>
+    <p>This is a simple card component.</p>
+    <button>Get Started</button>
+  </div>
+</body>
+</html>
