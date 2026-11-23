@@ -1,7 +1,7 @@
 # UI-Vision: Automated Design-to-Code Visual Match and Mismatch Classifier
- 
-Course project for **COMP 491 / INFO 491 / HIS 491 — Computer Vision**
-Student: Mohammed Alkubati · Instructor: Dr. Mohammed Al Gabri · November 2026
+
+By: Mohammed Alkubati 
+November 2026
  
 > **Status: work in progress.** The full pipeline works end to end (dataset generation, SSIM baseline, CNN, API, dashboard). The written evaluation, example figures and some robustness experiments are still pending. See [Project status](#2-project-status) and [Next steps](#12-next-steps).
  
