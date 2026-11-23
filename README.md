@@ -1,55 +1,257 @@
 # UI-Vision: Automated Design-to-Code Visual Match and Mismatch Classifier
-
-**By:** Mohammed Alkubati  
-**Date:** November 2026  
-
+ 
+Course project for **COMP 491 / INFO 491 / HIS 491 — Computer Vision**
+Student: Mohammed Alkubati · Instructor: Dr. Mohammed Al Gabri · November 2026
+ 
+> **Status: work in progress.** The full pipeline works end to end (dataset generation, SSIM baseline, CNN, API, dashboard). The written evaluation, example figures and some robustness experiments are still pending. See [Project status](#2-project-status) and [Next steps](#12-next-steps).
+ 
 ---
-
-## 1. Project Idea & Problem Statement
-
-Frontend developers and UI/UX designers spend considerable time manually comparing implemented web pages against original Figma designs to detect visual regressions—such as incorrect padding or margins, wrong font weights, color shifts, or misaligned components. Manual visual QA is slow, repetitive, and prone to human oversight before shipping to production.
-
-**UI-Vision** automates this comparison workflow by taking two input images:
-1. **Figma design** snapshot (`design`).
-2. **Coded page screenshot** (`code`).
-
-The system evaluates both inputs and returns similarity scores and classifications across two approaches:
-- **High Match (Production Ready)**
-- **Visual Mismatch (Needs Fix)**
-
+ 
+## 1. The idea
+ 
+**The problem.** Frontend developers and UI/UX designers spend a lot of time manually comparing a coded web page against the original Figma design to catch visual bugs (wrong padding, wrong font weight, color mismatches, changed corner radius, and so on). Manual visual QA is slow and easy to get wrong.
+ 
+**The system.** The user uploads two images: the design and a screenshot of the coded page. The system returns a similarity score and a decision:
+ 
+- **High Match** (production ready), or
+- **Visual Mismatch** (needs a fix).
+**Computer vision task.** Binary **image classification** on an image pair. This avoids the cost of labeling segmentation masks while still answering the core question: *"Does this code match the design?"*
+ 
+**Core question of the project.** Classical pixel/structural comparison (SSIM) is the obvious tool for this. Where does it fail, and can a small CNN do better?
+ 
 ---
-
-## 2. Computer Vision Task, Dataset & Architecture
-
-### Task & Classification
-- **Image Classification** (supported by classical structural/pixel comparison) to classify visual consistency into **High Match** vs. **Visual Mismatch** without the manual mask-labeling overhead of segmentation.
-
-### Dataset & Splitting Strategy
-- Paired UI component designs and rendered code screenshots (including controlled synthetic visual defects such as color shifts and layout/style differences), with `labels.csv` tracking sample ground truth.
-- Partitioned across training, validation, and test sets by **UI component type** to prevent data leakage across similar component variants.
-
-### Tech Stack & Models
-- **Baseline (Classical CV):** Python, OpenCV, and `scikit-image` computing Structural Similarity Index (**SSIM**) against `SSIM_T` and pixel-level differences.
-- **Deep Learning Classifier:** **SiameseNet** backed by **ResNet18** (`best.pt`), outputting match probability (`cnn_match_prob`) and verdict (`High Match` / `Visual Mismatch`).
-- **Backend API:** **FastAPI** (`scripts/api.py`) served via **Uvicorn** on `http://localhost:8000` with endpoint `POST /compare`.
-- **Frontend Dashboard:** **Next.js** (App Router) and **Tailwind CSS** (`dashboard/app/page.tsx`) running on `http://localhost:3000`, providing side-by-side image upload, preview, and dual comparison cards.
-
+ 
+## 2. Project status
+ 
+| Step | Status |
+|---|---|
+| Proposal | Done |
+| Environment setup (Python venv, Playwright, OpenCV, PyTorch) | Done |
+| Synthetic dataset generator (6 UI components, 600 pairs) | Done |
+| SSIM baseline + threshold selection | Done |
+| Siamese ResNet18 classifier | Done |
+| Error analysis (SSIM vs CNN per CSS property) | Done |
+| Hybrid rule experiment (SSIM + CNN) | Done, not confirmed (see results) |
+| Inference script and FastAPI endpoint | Done |
+| Next.js + Tailwind dashboard (side-by-side view) | Done |
+| Example figures for the report (`list_errors.py`) | Pending |
+| Report sections: Evaluation, Related Work, Limitations | Pending |
+| Robustness: multiple seeds, more training components | Pending |
+ 
 ---
-
-## 3. Step-by-Step Progress
-
-1. **Proposal & Scope Definition:** Defined the COMP 491 project scope for automated design-to-code visual verification (`UI-Vision`).
-2. **Dataset & CLI Inference (`scripts/predict.py`):** Prepared paired samples and `labels.csv`, and ran CLI inference comparing SSIM and the CNN (`SiameseNet` / `ResNet18`) on `High Match` and `Visual Mismatch` pairs.
-3. **Backend API (`scripts/api.py`):** Built the FastAPI `POST /compare` endpoint loading `models/best.pt`, handling image decoding/shape alignment, computing SSIM and CNN match probability, and returning JSON responses (`HTTP 200`).
-4. **End-to-End Dashboard (`dashboard/`):** Initialized the Next.js + Tailwind CSS app and implemented the main comparison page (`app/page.tsx`) with dual image upload, preview, `Compare` trigger, and side-by-side result cards for **Baseline (SSIM)** and **CNN (ResNet18)**.
-
+ 
+## 3. Approach in short
+ 
+1. **Generate** paired images automatically. Each UI component is an HTML page whose style is controlled by CSS variables. The *design* image is the component with default values. The *code* image is the same component after changing the variables. Small changes are labeled `match`, clearly visible changes are labeled `mismatch`.
+2. **Baseline:** SSIM on grayscale images, with a threshold chosen on the training/validation components.
+3. **Main model:** a Siamese ResNet18 (ImageNet weights) that compares the features of the two images and classifies the pair.
+4. **Evaluate on unseen component types**, not on random image splits, to avoid leakage.
+5. **Serve** both methods through a FastAPI endpoint and a Next.js dashboard.
 ---
-
-## 4. Challenges, Root Causes & Improvements
-
-### Grayscale Blindness in SSIM (`profile_0001`: Blue vs. Turquoise Card)
-- **Observation on `profile_0001` (`mismatch`):** A UI card whose color changed from **blue to turquoise** produced:
-  - **SSIM:** `0.9307` (`~0.931`) $\rightarrow$ **High Match** *(missed the color change)*
-  - **CNN (`ResNet18`):** `0.0` (`0.0%`) $\rightarrow$ **Visual Mismatch** *(caught the visual mismatch)*
-- **Comparison on `profile_0002` (`match`):** Produced `SSIM = 0.9999` (`High Match`) and `cnn_match_prob = 0.8868` (`High Match`).
-- **Root Cause & Improvement:**
+ 
+## 4. Dataset
+ 
+All data is synthetic and generated by `scripts/generate.py` using Playwright (headless Chromium).
+ 
+- **Components:** `card`, `button`, `navbar`, `alert`, `form`, plus `profile` (added later as a clean hold-out).
+- **Size:** 100 pairs per component (50 match, 50 mismatch), 600 pairs in total.
+- **Match** pairs: tiny perturbations that a designer would not notice (about ±1 px padding or radius, ±3 per RGB channel of the background, ±0.5 px font size, each applied at random; some pairs are identical).
+- **Mismatch** pairs: one or two clearly visible changes among padding, background color, font weight, corner radius and font size. Random colors must be at least 90 RGB units away from the original blue, so a "mismatch" is never visually identical to the design.
+- **Labels:** `dataset/labels.csv` (`id, component, label, change`). The `change` column records exactly which CSS variables were changed.
+**Split by component type** (to prevent leakage between similar samples):
+ 
+| Split | Components | Pairs |
+|---|---|---|
+| Train | card, button, navbar | 300 |
+| Validation | alert | 100 |
+| Test | form | 100 |
+| Hold-out | profile | 100 |
+ 
+The `profile` component was added **after** the first round of results, and nothing was tuned on it. It is the only fully clean evaluation set.
+ 
+---
+ 
+## 5. Methods
+ 
+### 5.1 Baseline: SSIM
+ 
+Both images are converted to grayscale (the code image is resized if its size differs) and compared with SSIM from `scikit-image`. A pair is `match` if SSIM ≥ **0.921**. This threshold was chosen on train + validation components only, then applied unchanged to test and hold-out.
+ 
+### 5.2 CNN: Siamese ResNet18
+ 
+- Both images are pasted on a fixed 704×256 canvas (so size differences caused by padding changes stay visible) and scaled by 0.5.
+- A **shared** ResNet18 backbone (ImageNet weights) produces a feature vector for each image: `fa`, `fb`.
+- Head: `[|fa − fb|, fa · fb]` (1024 values) → Linear(128) → ReLU → Dropout(0.3) → Linear(2).
+- Training: AdamW, learning rate 1e-4, batch size 16, 8 epochs, cross-entropy loss, CPU only (about 35–47 s per epoch). The epoch with the best validation accuracy is kept.
+- **BatchNorm layers are frozen** (kept in eval mode). See the problems section for why.
+### 5.3 Hybrid rule (experiment)
+ 
+A pair is `match` only if **both** SSIM and the CNN say `match`. This idea came from looking at which mistakes each method makes, so it is treated as a hypothesis, not a confirmed result.
+ 
+---
+ 
+## 6. Results
+ 
+Accuracy on each split. **Read the notes column before comparing numbers.**
+ 
+| Split | SSIM | CNN | Hybrid | Notes |
+|---|---|---|---|---|
+| Validation (alert) | 80% | 97% | 89% | The best CNN epoch was chosen on this split, so 97% is optimistic |
+| Test (form) | 87% | 84% | 99% | The hybrid rule was designed after error analysis on this split, so 99% is optimistic |
+| **Hold-out (profile)** | **74%** | **81%** | **80%** | **Clean: nothing was tuned on it** |
+ 
+Hold-out confusion counts (100 pairs; "missed bug" = a mismatch predicted as match; "false alarm" = a match predicted as mismatch):
+ 
+| Method | Correct match | Correct mismatch | Missed bug | False alarm |
+|---|---|---|---|---|
+| SSIM | 43 | 31 | 19 | 7 |
+| CNN | 39 | 42 | 8 | 11 |
+| Hybrid | 34 | 46 | 4 | 16 |
+ 
+**What we can say honestly**
+ 
+- On a component type the model never saw, the CNN beat SSIM by 7 points (81% vs 74%). With 100 pairs per split (1 pair = 1%), this is an indication, not a proof.
+- The hybrid rule did **not** beat the CNN on the clean hold-out (80% vs 81%), so it is not claimed as an improvement. It does trade differently: fewer missed bugs, more false alarms.
+- Training is unstable on this small dataset (one epoch collapsed to predicting a single class).
+### Error analysis (test split, form, 50 mismatch pairs)
+ 
+Number of mismatch pairs missed, grouped by the CSS property that was changed (pairs with two changes count under both):
+ 
+| Changed property | Pairs | CNN missed | SSIM missed |
+|---|---|---|---|
+| background color | 12 | 0 | 3 |
+| corner radius | 13 | 1 | 9 |
+| font size | 14 | 6 | 0 |
+| padding | 19 | 6 | 0 |
+| font weight | 11 | 7 | 4 |
+ 
+The two methods fail on different things. SSIM works on grayscale, so some color changes are almost invisible to it, and a small radius change affects only a few corner pixels that vanish in the global average. The CNN is better at color and corners, and weaker on size and spacing changes. Counts per property are small (11 to 19), so treat these as indications.
+ 
+---
+ 
+## 7. Problems we hit and how we solved them
+ 
+| Problem | What we saw | Solution |
+|---|---|---|
+| Only one component type in the first dataset | Could not split by component type as planned in the proposal | Added `button`, `navbar`, `alert`, `form` (later `profile`) sharing the same CSS variable names |
+| Random colors too close to the original blue | Labeled `mismatch` but visually the same (label noise) | Required a minimum color distance of 90 RGB units |
+| Many `match` pairs were pixel-identical | The model could learn "identical image = match" only | Added small random perturbations to match pairs |
+| Threshold picked on the same data it was scored on | Optimistic baseline accuracy | Choose the threshold on train + validation, report on test |
+| CNN collapsed to one class (50% accuracy, everything "mismatch") | Training loss near 0 but validation stuck at 50% | Froze BatchNorm layers (eval mode); added a `predicted_match` log to detect collapse |
+| Hybrid idea came from looking at test errors | 99% on test was not trustworthy | Generated a new unseen component (`profile`) as a clean hold-out; the hybrid did not hold up there |
+| First card-only baseline was only 69% accurate | SSIM missed color and corner-radius changes | Used this as the motivation for the CNN and for the error analysis |
+ 
+---
+ 
+## 8. API and dashboard
+ 
+**API** (`scripts/api.py`, FastAPI): `POST /compare` with two form files, `design` and `code`.
+ 
+```json
+{
+  "ssim": 0.9307,
+  "ssim_verdict": "High Match",
+  "cnn_match_prob": 0.0,
+  "cnn_verdict": "Visual Mismatch"
+}
+```
+ 
+Interactive docs at `http://localhost:8000/docs`.
+ 
+**Dashboard** (`dashboard/`, Next.js App Router + Tailwind CSS): upload the design and the screenshot, preview them side by side, press **Compare**, and see the SSIM score and the CNN probability with a verdict for each.
+ 
+Example: changing only the card color from blue to teal gives SSIM 0.931 (High Match, bug missed) while the CNN returns 0.0% match probability (Visual Mismatch, bug caught). This is a single example, not evidence; the numbers above are the evidence.
+ 
+---
+ 
+## 9. How to run
+ 
+Developed on Windows (PowerShell), Python 3.14, Node 24.
+ 
+```powershell
+# 1. Environment
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+playwright install chromium
+ 
+# 2. Dataset (generate.py deletes dataset/samples first, so run it before generate_holdout.py)
+python scripts/generate.py
+python scripts/generate_holdout.py
+ 
+# 3. Baseline
+python scripts/baseline.py
+python scripts/baseline_eval.py
+ 
+# 4. CNN (saves models/best.pt, about 5 to 10 minutes on CPU)
+python scripts/train_cnn.py
+ 
+# 5. Comparisons and analysis
+python scripts/hybrid_eval.py
+python scripts/error_analysis.py
+ 
+# 6. Try one pair
+python scripts/predict.py dataset/samples/profile_0001_design.png dataset/samples/profile_0001_code.png
+ 
+# 7. API (keep running)
+uvicorn api:app --app-dir scripts --port 8000
+ 
+# 8. Dashboard (new terminal)
+cd dashboard
+npm install
+npm run dev
+# open http://localhost:3000
+```
+ 
+Trained weights and generated images are not committed. Run steps 2 and 4 to recreate them. Results may differ slightly after retraining.
+ 
+---
+ 
+## 10. Repository structure
+ 
+```
+ui-vision/
+├── components/            HTML components controlled by CSS variables
+├── scripts/
+│   ├── generate.py            builds the 5 main components (500 pairs)
+│   ├── generate_holdout.py    adds the clean hold-out component (profile)
+│   ├── baseline.py            SSIM on every pair
+│   ├── baseline_eval.py       threshold from train+val, scored on test
+│   ├── train_cnn.py           Siamese ResNet18 training and test evaluation
+│   ├── hybrid_eval.py         SSIM vs CNN vs hybrid on val, test, hold-out
+│   ├── error_analysis.py      misses by CSS property
+│   ├── predict.py             compare one pair from the command line
+│   ├── api.py                 FastAPI endpoint
+│   └── check.py, check_torch.py, capture.py, analyze_baseline.py   setup and helper scripts
+├── dashboard/             Next.js + Tailwind front end
+├── dataset/               generated (not committed): samples/, labels.csv, baseline_results.csv
+└── models/                generated (not committed): best.pt
+```
+ 
+---
+ 
+## 11. Limitations
+ 
+- **Synthetic data.** Every "bug" is a CSS variable change on a simple component. Real design-to-code differences are messier (fonts, anti-aliasing, layout shifts).
+- **No real Figma exports.** The "design" image is the component rendered with its default CSS, used as a stand-in for a Figma export.
+- **One color theme.** All components share the same blue base color and the same five tunable properties.
+- **Small evaluation sets.** 100 pairs per split, so one pair is 1% and differences of a few points are not conclusive.
+- **Single training run.** One seed, unstable training; no confidence intervals yet.
+- **Component-sized inputs only.** The model expects images up to about 704×256 px. Larger screenshots are cropped, not resized, so full-page screenshots are not supported.
+- **Binary decision only.** The system does not say what is wrong or where.
+- **CPU training.** Fine for this dataset size, but limits experimentation.
+---
+ 
+## 12. Next steps
+ 
+1. Pick three examples from `list_errors.py` for the report (CNN right and SSIM wrong, SSIM right and CNN wrong, both right) and screenshot them in the dashboard.
+2. Write the report sections: Evaluation (accuracy, confusion matrices, SSIM vs CNN), Related Work, Limitations.
+3. Train with several seeds and report mean and spread.
+4. Add more training component types and stronger augmentation; keep a clean hold-out untouched.
+5. Handle full-page screenshots (tiling or resizing) in the dashboard.
+6. Optional: classify the *type* of difference (spacing, color, typography) as future work.
+---
+ 
+## 13. Related work (brief)
+ 
+Tools that compare a Figma design with an implemented page already exist (for example SmartUI, Design Diff and uimatch), and they rely mostly on pixel-level or structural comparison. This project does not claim a new idea for the comparison itself. Its contribution is a controlled study of where structural comparison (SSIM) fails on synthetic UI bugs and whether a small Siamese CNN, trained on generated pairs, handles those cases better on component types it has not seen.
