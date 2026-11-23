@@ -7,6 +7,7 @@ SPLIT = {
     "card": "train", "button": "train", "navbar": "train",
     "alert": "val",
     "form": "test",
+    "profile": "holdout",
 }
 
 rows = []
